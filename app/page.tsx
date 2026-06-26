@@ -54,53 +54,54 @@ export default function ExamPlatform() {
     return () => clearInterval(timer);
   }, [timeLeft, appState]);
 
-  if (appState === 'loading') return <div style={{height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', fontWeight: 'bold'}}>Processing with AI...</div>;
+  if (appState === 'loading') return <div style={{height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', fontWeight: 'bold'}}>Analyzing PDF...</div>;
 
   if (appState === 'setup') return (
-    <div style={{minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'}}>
+    <div style={{minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'sans-serif'}}>
       <div style={{background: 'white', padding: '30px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px'}}>
         <h1 style={{marginBottom: '20px', textAlign: 'center', fontSize: '22px'}}>Exam Config</h1>
-        <input type="password" placeholder="Gemini API Key" value={apiKey} onChange={e => setApiKey(e.target.value)} style={{width: '100%', padding: '10px', marginBottom: '15px', border: '1px solid #ccc', borderRadius: '5px'}} />
+        <label style={{display:'block', marginBottom:'5px', fontWeight:'bold'}}>API Key</label>
+        <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} style={{width: '100%', padding: '10px', marginBottom: '15px', border: '1px solid #ccc', borderRadius: '5px'}} />
+        <label style={{display:'block', marginBottom:'5px', fontWeight:'bold'}}>Upload PDF</label>
         <input type="file" accept="application/pdf" onChange={e => setFile(e.target.files?.[0] || null)} style={{width: '100%', padding: '10px', marginBottom: '15px'}} />
-        <input type="number" placeholder="Minutes" value={timerMinutes} onChange={e => setTimerMinutes(Number(e.target.value))} style={{width: '100%', padding: '10px', marginBottom: '15px', border: '1px solid #ccc'}} />
-        <button onClick={processPDF} style={{width: '100%', padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold'}}>Start Exam</button>
+        <label style={{display:'block', marginBottom:'5px', fontWeight:'bold'}}>Time (Minutes)</label>
+        <input type="number" value={timerMinutes} onChange={e => setTimerMinutes(Number(e.target.value))} style={{width: '100%', padding: '10px', marginBottom: '20px', border: '1px solid #ccc'}} />
+        <button onClick={processPDF} style={{width: '100%', padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor:'pointer'}}>Start Exam</button>
       </div>
     </div>
   );
 
   if (appState === 'results') {
     const correct = questions.filter(q => answers[q.id] === q.correctAnswer).length;
-    return <div style={{textAlign: 'center', padding: '50px'}}><h1>Score: {correct * 4} / {questions.length * 4}</h1><button onClick={() => window.location.reload()} style={{padding: '10px 20px', marginTop: '20px'}}>Retry</button></div>;
+    return <div style={{textAlign: 'center', padding: '50px', fontFamily: 'sans-serif'}}><h1>Exam Finished</h1><h2 style={{fontSize:'30px'}}>Score: {correct * 4} / {questions.length * 4}</h2><button onClick={() => window.location.reload()} style={{padding: '10px 20px', marginTop: '20px', cursor:'pointer'}}>Retry</button></div>;
   }
 
   return (
-    <div style={{display: 'flex', minHeight: '100vh', background: '#f1f5f9', padding: '20px'}}>
+    <div style={{display: 'flex', minHeight: '100vh', background: '#f1f5f9', padding: '20px', fontFamily: 'sans-serif'}}>
       <main style={{flex: 1, background: 'white', padding: '30px', borderRadius: '15px', marginRight: '20px'}}>
-        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '20px'}}>
-            <h2>Time: {Math.floor(timeLeft/60)}:{(timeLeft%60).toString().padStart(2,'0')}</h2>
-            <button onClick={() => setAppState('results')} style={{background: '#dc2626', color: 'white', padding: '8px 16px', borderRadius: '5px', border: 'none'}}>Submit</button>
+        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom:'1px solid #eee', paddingBottom:'10px'}}>
+            <h2 style={{margin:0}}>Time: {Math.floor(timeLeft/60)}:{(timeLeft%60).toString().padStart(2,'0')}</h2>
+            <button onClick={() => setAppState('results')} style={{background: '#dc2626', color: 'white', padding: '8px 16px', borderRadius: '5px', border: 'none', cursor:'pointer'}}>Submit</button>
         </div>
-        <p style={{fontSize: '18px', marginBottom: '20px'}}>{questions[currentIdx]?.text}</p>
+        <p style={{fontSize: '18px', marginBottom: '20px', fontWeight:500}}>{questions[currentIdx]?.text}</p>
         <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
           {questions[currentIdx]?.options.map((opt: string, i: number) => (
-            <button key={i} onClick={() => setAnswers({...answers, [questions[currentIdx].id]: opt})} style={{padding: '15px', border: '2px solid #e2e8f0', borderRadius: '10px', textAlign: 'left', background: answers[questions[currentIdx].id] === opt ? '#dbeafe' : 'white'}}>{opt}</button>
+            <button key={i} onClick={() => setAnswers({...answers, [questions[currentIdx].id]: opt})} style={{padding: '15px', border: '2px solid #e2e8f0', borderRadius: '10px', textAlign: 'left', cursor:'pointer', background: answers[questions[currentIdx].id] === opt ? '#dbeafe' : 'white'}}>{opt}</button>
           ))}
         </div>
         <div style={{marginTop: '30px', display: 'flex', gap: '10px'}}>
-            <button disabled={currentIdx === 0} onClick={() => setCurrentIdx(currentIdx - 1)}>Prev</button>
-            <button disabled={currentIdx === questions.length - 1} onClick={() => setCurrentIdx(currentIdx + 1)}>Next</button>
+            <button disabled={currentIdx === 0} onClick={() => setCurrentIdx(currentIdx - 1)} style={{padding: '10px 20px', cursor:'pointer'}}>Prev</button>
+            <button disabled={currentIdx === questions.length - 1} onClick={() => setCurrentIdx(currentIdx + 1)} style={{padding: '10px 20px', cursor:'pointer'}}>Next</button>
         </div>
       </main>
-      <aside style={{width: '250px', background: 'white', padding: '20px', borderRadius: '15px'}}>
-        <h3>Question Palette</h3>
+      <aside style={{width: '250px', background: 'white', padding: '20px', borderRadius: '15px', border:'1px solid #ddd'}}>
+        <h3 style={{marginTop:0}}>Question Palette</h3>
         <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginTop: '10px'}}>
-            {questions.map((_, i) => (
-                <button key={i} onClick={() => setCurrentIdx(i)} style={{height: '40px', background: answers[questions[i].id] ? '#10b981' : '#e2e8f0'}}>{i + 1}</button>
+            {questions.map((q, i) => (
+                <button key={i} onClick={() => setCurrentIdx(i)} style={{height: '40px', background: answers[q.id] ? '#10b981' : '#e2e8f0', border:'none', borderRadius:'5px', cursor:'pointer'}}>{i + 1}</button>
             ))}
         </div>
       </aside>
     </div>
   );
 }
-      
- 
