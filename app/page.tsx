@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
 // A dummy dataset to simulate the questions extracted from your uploaded PDF/PPT
+// (Once we connect the AI backend, this will be replaced by the real data from the PDF)
 const extractedQuestions = [
   { id: 1, text: "Which of the following sorting algorithms has a worst-case time complexity of O(n log n)?", options: ["Bubble Sort", "Quick Sort", "Merge Sort", "Selection Sort"] },
   { id: 2, text: "In an operating system, what is a primary cause of thrashing?", options: ["High paging activity", "Low CPU utilization", "Excessive disk space", "Process deadlock"] },
@@ -17,6 +18,7 @@ export default function ExamPlatform() {
   
   // Configuration States
   const [hasUploaded, setHasUploaded] = useState(false);
+  const [fileName, setFileName] = useState("");
   const [timerMinutes, setTimerMinutes] = useState(30);
   const [marksPerQuestion, setMarksPerQuestion] = useState(4);
   const [negativeMarks, setNegativeMarks] = useState(1);
@@ -25,7 +27,7 @@ export default function ExamPlatform() {
   const [questions, setQuestions] = useState<any[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [visited, setVisited] = useState<Record<number, boolean>>({ 0: true }); // index 0 is visited on start
+  const [visited, setVisited] = useState<Record<number, boolean>>({ 0: true }); 
   const [timeLeft, setTimeLeft] = useState(0);
 
   // ---------------------------------------------------------
@@ -95,19 +97,34 @@ export default function ExamPlatform() {
           <h1 className="text-2xl font-bold text-slate-900 mb-6 text-center">Exam Configuration</h1>
           
           <div className="space-y-6">
-            {/* File Upload Simulation */}
+            
+            {/* REAL FILE UPLOAD BUTTON */}
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">Upload Question Paper (PDF/PPT)</label>
-              <button 
-                onClick={() => setHasUploaded(true)}
-                className={`w-full py-4 border-2 border-dashed rounded-xl flex items-center justify-center transition-all ${hasUploaded ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-slate-300 hover:border-blue-500 hover:bg-blue-50 text-slate-500'}`}
-              >
-                {hasUploaded ? "✓ Document Uploaded & Parsed" : "+ Click to Attach File"}
-              </button>
+              <div className={`relative w-full py-4 px-4 border-2 border-dashed rounded-xl flex items-center justify-center transition-all overflow-hidden ${hasUploaded ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-slate-300 hover:border-blue-500 hover:bg-blue-50 text-slate-500'}`}>
+                
+                {/* The invisible native file input */}
+                <input 
+                  type="file" 
+                  accept=".pdf,.ppt,.pptx"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setFileName(file.name);
+                      setHasUploaded(true);
+                    }
+                  }}
+                />
+                
+                {/* The visible label */}
+                <span className="text-center truncate w-full">
+                  {hasUploaded ? `✓ Attached: ${fileName}` : "+ Click to Attach File"}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              {/* Timer Input */}
               <div className="col-span-2">
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Time Limit (Minutes)</label>
                 <input 
@@ -118,7 +135,6 @@ export default function ExamPlatform() {
                 />
               </div>
 
-              {/* Marks Input */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Marks per Q</label>
                 <input 
@@ -129,7 +145,6 @@ export default function ExamPlatform() {
                 />
               </div>
 
-              {/* Negative Marks Input */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Negative Marks</label>
                 <input 
@@ -163,6 +178,7 @@ export default function ExamPlatform() {
           <h2 className="text-3xl font-bold text-slate-900 mb-2">Exam Submitted</h2>
           <p className="text-slate-500 mb-8">Your answers have been locked and submitted for evaluation.</p>
           
+          {/* Analytics Dashboard Placeholder */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-left space-y-3">
             <h3 className="font-bold text-slate-800 text-lg border-b pb-2 mb-4">Quick Summary</h3>
             <div className="flex justify-between">
@@ -187,7 +203,6 @@ export default function ExamPlatform() {
     );
   }
 
-  // EXAM ENVIRONMENT UI
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm">
@@ -209,7 +224,6 @@ export default function ExamPlatform() {
       </header>
 
       <main className="flex-1 flex overflow-hidden">
-        {/* Left Side: Question Canvas */}
         <div className="flex-1 p-8 overflow-y-auto flex flex-col">
           <div className="bg-white border border-slate-200 rounded-xl p-8 shadow-sm mb-6">
             <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
@@ -269,7 +283,6 @@ export default function ExamPlatform() {
           </div>
         </div>
 
-        {/* Right Side: Question Palette */}
         <aside className="w-80 bg-white border-l border-slate-200 p-6 flex flex-col justify-between">
           <div>
             <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider mb-6 border-b pb-2">Question Palette</h3>
@@ -279,17 +292,16 @@ export default function ExamPlatform() {
                 const isAnswered = !!answers[q.id];
                 const isVisited = !!visited[idx];
 
-                // Determine precise styling based on user request
-                let btnClass = "border-slate-200 text-slate-600 bg-white hover:bg-slate-50"; // Unvisited
+                let btnClass = "border-slate-200 text-slate-600 bg-white hover:bg-slate-50"; 
                 
                 if (isAnswered) {
-                  btnClass = "bg-emerald-500 border-emerald-600 text-white font-bold shadow-sm"; // Answered = Green
+                  btnClass = "bg-emerald-500 border-emerald-600 text-white font-bold shadow-sm"; 
                 } else if (isVisited) {
-                  btnClass = "bg-red-500 border-red-600 text-white font-bold shadow-sm"; // Visited but Not Answered = Red
+                  btnClass = "bg-red-500 border-red-600 text-white font-bold shadow-sm"; 
                 }
                 
                 if (isCurrent) {
-                  btnClass += " ring-4 ring-blue-300 ring-offset-1 scale-105 z-10"; // Highlight current
+                  btnClass += " ring-4 ring-blue-300 ring-offset-1 scale-105 z-10"; 
                 }
 
                 return (
@@ -305,7 +317,6 @@ export default function ExamPlatform() {
             </div>
           </div>
 
-          {/* Indicator Legend Panel */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
             <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Legend</h4>
             <div className="flex items-center gap-3 text-sm font-medium text-slate-700">
