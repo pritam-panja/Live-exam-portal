@@ -180,11 +180,11 @@ ${pdfText.substring(0, 12000)}`;
 
       // Try multiple free models as fallback
       const models = [
-        'meta-llama/llama-3.3-70b-instruct:free',
-        'deepseek/deepseek-chat:free',
-        'mistralai/mistral-7b-instruct:free',
-        'google/gemma-3-27b-it:free',
-      ];
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'deepseek/deepseek-chat:free',
+  'mistralai/mistral-7b-instruct:free',
+  'google/gemma-3-27b-it:free',
+];
 
       let data = null;
       let lastError = '';
