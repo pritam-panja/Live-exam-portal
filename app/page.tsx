@@ -478,6 +478,511 @@ ${pdfText.substring(0, 12000)}`;
     );
   }
 
-  // ─── RESULTS SCREEN 
-        
-      
+  // ─── RESULTS SCREEN ────────────────────────────────────────────────────────
+  if (appState === 'results') {
+    const totalQuestions = questions.length;
+    const attempted = Object.keys(answers).length;
+    const unattempted = totalQuestions - attempted;
+    const correct = questions.filter(q => answers[q.id] === q.correctAnswer).length;
+    const wrong = attempted - correct;
+    const rawMarks = correct * config.marksPerQuestion;
+    const deduction = config.negativeMarking ? wrong * config.negativeMarksValue : 0;
+    const finalScore = Math.max(0, rawMarks - deduction);
+    const maxScore = totalQuestions * config.marksPerQuestion;
+    const percentage = maxScore > 0 ? Math.round((finalScore / maxScore) * 100) : 0;
+
+    const getGrade = () => {
+      if (percentage >= 90) return { grade: 'A+', color: '#16a34a', label: 'Outstanding! 🏆' };
+      if (percentage >= 75) return { grade: 'A', color: '#2563eb', label: 'Excellent! 🎉' };
+      if (percentage >= 60) return { grade: 'B', color: '#7c3aed', label: 'Good Job! 👍' };
+      if (percentage >= 45) return { grade: 'C', color: '#d97706', label: 'Average 📚' };
+      return { grade: 'D', color: '#dc2626', label: 'Needs Improvement 💪' };
+    };
+
+    const { grade, color, label } = getGrade();
+
+    const topicMap: Record<string, { correct: number; total: number }> = {};
+    questions.forEach(q => {
+      if (!topicMap[q.topic]) topicMap[q.topic] = { correct: 0, total: 0 };
+      topicMap[q.topic].total++;
+      if (answers[q.id] === q.correctAnswer) topicMap[q.topic].correct++;
+    });
+
+    return (
+      <div style={{
+        minHeight: '100vh', background: '#f1f5f9',
+        fontFamily: "'Segoe UI', sans-serif", padding: '30px 20px'
+      }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+
+          {/* Score Card */}
+          <div style={{
+            background: `linear-gradient(135deg, ${color}18, ${color}08)`,
+            border: `2px solid ${color}33`,
+            borderRadius: '24px', padding: '40px',
+            textAlign: 'center', marginBottom: '25px',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.08)'
+          }}>
+            <div style={{ fontSize: '16px', color: '#64748b', marginBottom: '5px', fontWeight: 500 }}>
+              Exam Completed ✓
+            </div>
+            <div style={{ fontSize: '90px', fontWeight: 900, color, lineHeight: 1, marginBottom: '5px' }}>
+              {grade}
+            </div>
+            <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b' }}>{label}</div>
+            <div style={{ fontSize: '52px', fontWeight: 900, color, margin: '15px 0 5px' }}>
+              {finalScore}
+              <span style={{ fontSize: '24px', color: '#94a3b8', fontWeight: 500 }}> / {maxScore}</span>
+            </div>
+            <div style={{
+              display: 'inline-block', background: color,
+              color: 'white', padding: '8px 24px',
+              borderRadius: '25px', fontSize: '20px', fontWeight: 800
+            }}>{percentage}%</div>
+
+            {config.negativeMarking && deduction > 0 && (
+              <div style={{ marginTop: '15px', fontSize: '13px', color: '#dc2626' }}>
+                ⚠️ {correct * config.marksPerQuestion} marks - {deduction} deducted = {finalScore} final score
+              </div>
+            )}
+          </div>
+
+          {/* Stats Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '25px' }}>
+            {[
+              { label: 'Total Qs', value: totalQuestions, color: '#667eea', icon: '📋' },
+              { label: 'Attempted', value: attempted, color: '#2563eb', icon: '✏️' },
+              { label: 'Correct', value: correct, color: '#16a34a', icon: '✅' },
+              { label: 'Wrong', value: wrong, color: '#dc2626', icon: '❌' },
+              { label: 'Skipped', value: unattempted, color: '#f59e0b', icon: '⭕' },
+              { label: 'Deduction', value: `-${deduction}`, color: '#dc2626', icon: '➖' },
+            ].map((stat, i) => (
+              <div key={i} style={{
+                background: 'white', borderRadius: '16px',
+                padding: '20px 15px', textAlign: 'center',
+                boxShadow: '0 4px 15px rgba(0,0,0,0.06)',
+                borderTop: `4px solid ${stat.color}`
+              }}>
+                <div style={{ fontSize: '26px', marginBottom: '6px' }}>{stat.icon}</div>
+                <div style={{ fontSize: '26px', fontWeight: 800, color: stat.color }}>{stat.value}</div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, marginTop: '3px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Topic Breakdown */}
+          {Object.keys(topicMap).length > 1 && (
+            <div style={{ background: 'white', borderRadius: '16px', padding: '25px', marginBottom: '25px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)' }}>
+              <h3 style={{ margin: '0 0 20px', color: '#1e293b', fontSize: '17px', fontWeight: 700 }}>
+                📊 Topic-wise Performance
+              </h3>
+              {Object.entries(topicMap).map(([topic, data], i) => {
+                const pct = Math.round((data.correct / data.total) * 100);
+                const barColor = pct >= 70 ? '#16a34a' : pct >= 40 ? '#f59e0b' : '#dc2626';
+                return (
+                  <div key={i} style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>{topic}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '13px', color: '#64748b' }}>{data.correct}/{data.total}</span>
+                        <span style={{
+                          background: barColor + '20', color: barColor,
+                          padding: '2px 8px', borderRadius: '8px',
+                          fontSize: '12px', fontWeight: 700
+                        }}>{pct}%</span>
+                      </div>
+                    </div>
+                    <div style={{ background: '#f1f5f9', borderRadius: '8px', height: '10px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%', width: `${pct}%`,
+                        background: barColor, borderRadius: '8px',
+                        transition: 'width 1s ease'
+                      }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Question Review */}
+          <div style={{ background: 'white', borderRadius: '16px', padding: '25px', marginBottom: '25px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)' }}>
+            <h3 style={{ margin: '0 0 20px', color: '#1e293b', fontSize: '17px', fontWeight: 700 }}>
+              🔍 Detailed Question Review
+            </h3>
+            {questions.map((q, i) => {
+              const userAnswer = answers[q.id];
+              const isCorrect = userAnswer === q.correctAnswer;
+              const isUnattempted = !userAnswer;
+              const bgColor = isUnattempted ? '#fffbeb' : isCorrect ? '#f0fdf4' : '#fef2f2';
+              const borderColor = isUnattempted ? '#fde68a' : isCorrect ? '#86efac' : '#fca5a5';
+              const icon = isUnattempted ? '⭕' : isCorrect ? '✅' : '❌';
+
+              return (
+                <div key={q.id} style={{
+                  border: `1.5px solid ${borderColor}`,
+                  background: bgColor, borderRadius: '12px',
+                  padding: '16px', marginBottom: '12px'
+                }}>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <span style={{ fontSize: '18px', flexShrink: 0, marginTop: '2px' }}>{icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '8px', fontSize: '14px', lineHeight: 1.5 }}>
+                        Q{i + 1}. {q.text}
+                      </div>
+                      <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', fontSize: '13px', marginBottom: q.explanation ? '10px' : 0 }}>
+                        {!isUnattempted && (
+                          <span style={{ color: isCorrect ? '#16a34a' : '#dc2626', fontWeight: 700 }}>
+                            Your answer: {userAnswer}
+                          </span>
+                        )}
+                        {!isCorrect && (
+                          <span style={{ color: '#16a34a', fontWeight: 700 }}>
+                            ✓ Correct: {q.correctAnswer}
+                          </span>
+                        )}
+                        {isUnattempted && (
+                          <span style={{ color: '#d97706', fontWeight: 600 }}>Not attempted</span>
+                        )}
+                      </div>
+                      {q.explanation && (
+                        <div style={{
+                          background: 'rgba(255,255,255,0.8)',
+                          borderLeft: '3px solid #667eea',
+                          padding: '10px 12px', borderRadius: '0 8px 8px 0',
+                          fontSize: '13px', color: '#475569', marginTop: '8px', lineHeight: 1.6
+                        }}>
+                          <strong style={{ color: '#667eea' }}>💡 Explanation: </strong>
+                          {q.explanation}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap', paddingBottom: '20px' }}>
+            <button
+              onClick={() => {
+                setAnswers({});
+                setCurrentIdx(0);
+                setTimeLeft(config.timerMinutes * 60);
+                setAppState('exam');
+              }}
+              style={{
+                padding: '14px 32px',
+                background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                color: 'white', border: 'none', borderRadius: '12px',
+                fontSize: '15px', fontWeight: 700, cursor: 'pointer',
+                boxShadow: '0 8px 20px rgba(102,126,234,0.35)'
+              }}
+            >🔄 Retake Exam</button>
+            <button
+              onClick={() => {
+                setFile(null); setFileName('');
+                setQuestions([]); setAnswers({});
+                setAppState('setup');
+              }}
+              style={{
+                padding: '14px 32px', background: 'white',
+                color: '#667eea', border: '2px solid #667eea',
+                borderRadius: '12px', fontSize: '15px', fontWeight: 700, cursor: 'pointer'
+              }}
+            >📄 New Exam</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── EXAM SCREEN ───────────────────────────────────────────────────────────
+  const currentQuestion = questions[currentIdx];
+  const totalQ = questions.length;
+  const answeredCount = Object.keys(answers).length;
+  const isLastQuestion = currentIdx === totalQ - 1;
+  const timerPercent = (timeLeft / (config.timerMinutes * 60)) * 100;
+  const isTimerWarning = timeLeft <= 300;
+  const isTimerCritical = timeLeft <= 60;
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9', fontFamily: "'Segoe UI', sans-serif", flexDirection: 'column' }}>
+
+      {/* Top Bar */}
+      <div style={{
+        background: 'white', padding: '12px 25px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        boxShadow: '0 2px 15px rgba(0,0,0,0.08)',
+        position: 'sticky', top: 0, zIndex: 100
+      }}>
+        <div style={{ fontWeight: 800, fontSize: '18px', color: '#1e293b' }}>📝 PYQ Exam Portal</div>
+
+        {/* Timer */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px',
+          background: isTimerCritical ? '#fef2f2' : isTimerWarning ? '#fffbeb' : '#f0fdf4',
+          padding: '8px 20px', borderRadius: '12px',
+          border: `2px solid ${isTimerCritical ? '#fca5a5' : isTimerWarning ? '#fde68a' : '#86efac'}`
+        }}>
+          <span style={{ fontSize: '20px' }}>{isTimerCritical ? '🚨' : isTimerWarning ? '⚠️' : '⏱'}</span>
+          <div>
+            <div style={{
+              fontSize: '24px', fontWeight: 900,
+              color: isTimerCritical ? '#dc2626' : isTimerWarning ? '#d97706' : '#16a34a',
+              fontFamily: 'monospace', letterSpacing: '2px'
+            }}>
+              {Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}
+            </div>
+            <div style={{ height: '4px', background: '#e2e8f0', borderRadius: '4px', marginTop: '3px' }}>
+              <div style={{
+                height: '100%', width: `${timerPercent}%`,
+                background: isTimerCritical ? '#dc2626' : isTimerWarning ? '#f59e0b' : '#16a34a',
+                borderRadius: '4px', transition: 'width 1s linear'
+              }} />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '15px' }}>{answeredCount}/{totalQ} answered</div>
+            <div style={{ fontSize: '12px', color: '#94a3b8' }}>Q {currentIdx + 1} of {totalQ}</div>
+          </div>
+          <button
+            onClick={submitExam}
+            style={{
+              padding: '10px 20px',
+              background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+              color: 'white', border: 'none', borderRadius: '10px',
+              fontWeight: 700, cursor: 'pointer', fontSize: '14px',
+              boxShadow: '0 4px 12px rgba(220,38,38,0.3)'
+            }}
+          >Submit Exam</button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{ display: 'flex', flex: 1, padding: '20px', gap: '20px', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
+
+        {/* Question Panel */}
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <div style={{ background: 'white', borderRadius: '16px', padding: '30px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)', flex: 1 }}>
+
+            {/* Question Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                  color: 'white', width: '40px', height: '40px',
+                  borderRadius: '12px', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontWeight: 800, fontSize: '16px'
+                }}>{currentIdx + 1}</div>
+                <div>
+                  <div style={{ fontSize: '13px', color: '#64748b', fontWeight: 500 }}>Question {currentIdx + 1} of {totalQ}</div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>📌 {currentQuestion?.topic}</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <span style={{ background: '#dbeafe', color: '#2563eb', padding: '5px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 700 }}>
+                  +{config.marksPerQuestion} marks
+                </span>
+                {config.negativeMarking && (
+                  <span style={{ background: '#fee2e2', color: '#dc2626', padding: '5px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 700 }}>
+                    -{config.negativeMarksValue} wrong
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Question Text */}
+            <div style={{
+              fontSize: '17px', color: '#1e293b', lineHeight: 1.75,
+              marginBottom: '25px', fontWeight: 500,
+              padding: '18px', background: '#f8fafc',
+              borderRadius: '12px', borderLeft: '4px solid #667eea'
+            }}>
+              {currentQuestion?.text}
+            </div>
+
+            {/* Options */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {currentQuestion?.options.map((opt: string, i: number) => {
+                const isSelected = answers[currentQuestion.id] === opt;
+                const letters = ['A', 'B', 'C', 'D', 'E'];
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setAnswers(prev => ({ ...prev, [currentQuestion.id]: opt }))}
+                    style={{
+                      padding: '15px 20px',
+                      border: `2px solid ${isSelected ? '#667eea' : '#e2e8f0'}`,
+                      borderRadius: '12px', textAlign: 'left', cursor: 'pointer',
+                      background: isSelected ? 'linear-gradient(135deg, #ede9fe, #dbeafe)' : 'white',
+                      display: 'flex', alignItems: 'center', gap: '15px',
+                      fontFamily: "'Segoe UI', sans-serif",
+                      fontSize: '15px', color: '#1e293b',
+                      fontWeight: isSelected ? 700 : 400,
+                      boxShadow: isSelected ? '0 4px 15px rgba(102,126,234,0.2)' : 'none',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <span style={{
+                      width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0,
+                      background: isSelected ? '#667eea' : '#f1f5f9',
+                      color: isSelected ? 'white' : '#64748b',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 800, fontSize: '14px'
+                    }}>{letters[i]}</span>
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+
+            {answers[currentQuestion?.id] && (
+              <button
+                onClick={() => setAnswers(prev => { const c = { ...prev }; delete c[currentQuestion.id]; return c; })}
+                style={{
+                  marginTop: '15px', padding: '8px 16px',
+                  background: 'transparent', color: '#dc2626',
+                  border: '1.5px solid #fca5a5', borderRadius: '8px',
+                  cursor: 'pointer', fontSize: '13px', fontWeight: 600
+                }}
+              >🗑 Clear Selection</button>
+            )}
+          </div>
+
+          {/* Navigation */}
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '15px 20px',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.06)'
+          }}>
+            <button
+              disabled={currentIdx === 0}
+              onClick={() => setCurrentIdx(p => p - 1)}
+              style={{
+                padding: '10px 24px',
+                background: currentIdx === 0 ? '#f1f5f9' : 'white',
+                color: currentIdx === 0 ? '#94a3b8' : '#667eea',
+                border: `2px solid ${currentIdx === 0 ? '#e2e8f0' : '#667eea'}`,
+                borderRadius: '10px', cursor: currentIdx === 0 ? 'not-allowed' : 'pointer',
+                fontWeight: 700, fontSize: '14px'
+              }}
+            >← Previous</button>
+
+            <span style={{
+              color: answers[currentQuestion?.id] ? '#16a34a' : '#94a3b8',
+              fontWeight: 600, fontSize: '14px'
+            }}>
+              {answers[currentQuestion?.id] ? '✅ Answered' : '⭕ Not answered'}
+            </span>
+
+            {isLastQuestion ? (
+              <button
+                onClick={submitExam}
+                style={{
+                  padding: '10px 24px',
+                  background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                  color: 'white', border: 'none', borderRadius: '10px',
+                  cursor: 'pointer', fontWeight: 700, fontSize: '14px',
+                  boxShadow: '0 4px 12px rgba(22,163,74,0.3)'
+                }}
+              >Submit Exam ✓</button>
+            ) : (
+              <button
+                onClick={() => setCurrentIdx(p => p + 1)}
+                style={{
+                  padding: '10px 24px',
+                  background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                  color: 'white', border: 'none', borderRadius: '10px',
+                  cursor: 'pointer', fontWeight: 700, fontSize: '14px',
+                  boxShadow: '0 4px 12px rgba(102,126,234,0.3)'
+                }}
+              >Next →</button>
+            )}
+          </div>
+        </main>
+
+        {/* Sidebar */}
+        <aside style={{ width: '260px', display: 'flex', flexDirection: 'column', gap: '15px', flexShrink: 0 }}>
+
+          {/* Palette */}
+          <div style={{ background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)' }}>
+            <h3 style={{ margin: '0 0 15px', fontSize: '15px', color: '#1e293b', fontWeight: 700 }}>Question Palette</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px' }}>
+              {[
+                { color: '#16a34a', bg: '#f0fdf4', label: 'Answered', count: answeredCount },
+                { color: '#dc2626', bg: '#fef2f2', label: 'Not Answered', count: totalQ - answeredCount },
+              ].map((item, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '14px', height: '14px', borderRadius: '4px', background: item.bg, border: `2px solid ${item.color}` }} />
+                    <span style={{ fontSize: '13px', color: '#64748b' }}>{item.label}</span>
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: item.color }}>{item.count}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+              {questions.map((q, i) => {
+                const isAnswered = !!answers[q.id];
+                const isCurrent = i === currentIdx;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentIdx(i)}
+                    style={{
+                      height: '36px',
+                      background: isCurrent ? '#667eea' : isAnswered ? '#16a34a' : '#fef2f2',
+                      border: `2px solid ${isCurrent ? '#4f46e5' : isAnswered ? '#16a34a' : '#fca5a5'}`,
+                      borderRadius: '8px', cursor: 'pointer',
+                      fontSize: '12px', fontWeight: 800,
+                      color: isCurrent || isAnswered ? 'white' : '#dc2626',
+                      transition: 'all 0.15s'
+                    }}
+                  >{i + 1}</button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Exam Info */}
+          <div style={{ background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)' }}>
+            <h3 style={{ margin: '0 0 15px', fontSize: '15px', color: '#1e293b', fontWeight: 700 }}>📋 Exam Info</h3>
+            {[
+              { label: 'Total Questions', value: totalQ },
+              { label: 'Marks/Question', value: `+${config.marksPerQuestion}` },
+              { label: 'Negative Marks', value: config.negativeMarking ? `-${config.negativeMarksValue}` : 'None' },
+              { label: 'Max Score', value: totalQ * config.marksPerQuestion },
+            ].map((item, i) => (
+              <div key={i} style={{
+                display: 'flex', justifyContent: 'space-between',
+                padding: '8px 0',
+                borderBottom: i < 3 ? '1px solid #f1f5f9' : 'none'
+              }}>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>{item.label}</span>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block', marginBottom: '6px',
+  fontWeight: 700, fontSize: '13px', color: '#374151'
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '11px 14px',
+  border: '2px solid #e2e8f0', borderRadius: '10px',
+  fontSize: '14px', outline: 'none', boxSizing: 'border-box',
+  fontFamily: "'Segoe UI', sans-serif", color: '#1e293b',
+  transition: 'border-color 0.2s'
+};
