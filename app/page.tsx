@@ -9,6 +9,7 @@ interface Question {
   correctAnswer: string;
   topic: string;
   marks: number;
+  explanation?: string;
 }
 
 interface ExamConfig {
@@ -35,7 +36,7 @@ export default function ExamPlatform() {
   const [config, setConfig] = useState<ExamConfig>(() => {
     if (typeof window !== 'undefined') {
       return {
-        apiKey: localStorage.getItem('gemini_key') || '',
+        apiKey: localStorage.getItem('openrouter_key') || '',
         timerMinutes: Number(localStorage.getItem('timer_minutes')) || 30,
         marksPerQuestion: Number(localStorage.getItem('marks_per_q')) || 4,
         negativeMarking: localStorage.getItem('negative_marking') === 'true',
@@ -51,16 +52,14 @@ export default function ExamPlatform() {
     };
   });
 
-  // Save config to localStorage
   useEffect(() => {
-    if (config.apiKey) localStorage.setItem('gemini_key', config.apiKey);
+    if (config.apiKey) localStorage.setItem('openrouter_key', config.apiKey);
     localStorage.setItem('timer_minutes', String(config.timerMinutes));
     localStorage.setItem('marks_per_q', String(config.marksPerQuestion));
     localStorage.setItem('negative_marking', String(config.negativeMarking));
     localStorage.setItem('negative_value', String(config.negativeMarksValue));
   }, [config]);
 
-  // Auto-submit when timer hits 0
   const submitExam = useCallback(() => {
     setAppState('results');
   }, []);
@@ -84,9 +83,28 @@ export default function ExamPlatform() {
     return () => clearInterval(timer);
   }, [appState, timeLeft, submitExam]);
 
+  // Extract text from PDF using pdfjs
+  const extractPdfText = async (file: File): Promise<string> => {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map((item: any) => item.str).join(' ');
+      fullText += `\n--- Page ${i} ---\n${pageText}\n`;
+      setLoadingProgress(20 + (i / pdf.numPages) * 30);
+    }
+    return fullText;
+  };
+
   const processPDF = async () => {
     if (!file) { alert('Please upload a PDF file.'); return; }
-    if (!config.apiKey) { alert('Please enter your Google API Key.'); return; }
+    if (!config.apiKey) { alert('Please enter your OpenRouter API Key.'); return; }
     if (config.timerMinutes < 1) { alert('Timer must be at least 1 minute.'); return; }
 
     setAppState('loading');
@@ -94,71 +112,83 @@ export default function ExamPlatform() {
     setLoadingText('Reading PDF file...');
 
     try {
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
+      // Step 1: Extract text from PDF
+      const pdfText = await extractPdfText(file);
+      
+      if (!pdfText || pdfText.trim().length < 50) {
+        throw new Error('Could not extract text from PDF. Try a different file.');
+      }
+
+      setLoadingProgress(55);
+      setLoadingText('Sending to AI for analysis...');
+
+      const prompt = `You are an expert exam question extractor. I will give you text extracted from a PYQ (Previous Year Question) PDF.
+
+Extract ALL multiple choice questions from this text.
+
+The PDF may have:
+- Questions like "Q1.", "Q2.", "Question 1:" etc.
+- Options as (A), (B), (C), (D) or A), B), C), D)
+- Correct answers may be highlighted, marked with "Ans:", "Answer:", or shown separately
+- Explanations after each question
+
+Return ONLY a valid JSON array, no markdown, no code blocks, no extra text:
+[
+  {
+    "text": "Full question text",
+    "options": ["(A) option1", "(B) option2", "(C) option3", "(D) option4"],
+    "correctAnswer": "(C) option3",
+    "topic": "Subject/Topic",
+    "explanation": "Why this answer is correct"
+  }
+]
+
+STRICT RULES:
+- correctAnswer MUST exactly match one of the options word-for-word
+- Include the (A), (B) etc prefix in both options and correctAnswer
+- Extract EVERY question
+- If explanation is given, include it
+- If no answer is clearly marked, use your knowledge to determine correct answer
+- topic should be the subject area (Reasoning, Math, English, GK, etc)
+
+PDF TEXT:
+${pdfText}`;
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : '',
+          'X-Title': 'PYQ Exam Portal',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.0-flash-exp:free',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          max_tokens: 8000,
+        })
       });
 
-      setLoadingProgress(30);
-      setLoadingText('Sending to Gemini AI...');
-
-      const prompt = `You are an expert exam question extractor. Analyze this PDF exam paper carefully.
-Extract ALL multiple choice questions with their options and correct answers.
-Return ONLY a valid JSON array with NO markdown, NO code blocks, NO extra text.
-Format: [{"text": "Full question text here?", "options": ["A) option1", "B) option2", "C) option3", "D) option4"], "correctAnswer": "A) option1", "topic": "Subject/Topic name"}]
-Rules:
-- correctAnswer must exactly match one of the options
-- Include all 4 options for each question
-- Extract every question from the paper
-- topic should be the subject area of the question`;
-
-      setLoadingProgress(50);
-
-      const response = await fetch(
-       
-`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: 'application/pdf', data: base64Data } }
-              ]
-            }],
-            generationConfig: {
-              temperature: 0.1,
-              maxOutputTokens: 8192,
-            }
-          })
-        }
-      );
-
-      setLoadingProgress(75);
+      setLoadingProgress(85);
       setLoadingText('Processing questions...');
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData?.error?.message || 'API request failed');
+        throw new Error(errData?.error?.message || `API error: ${response.status}`);
       }
 
       const data = await response.json();
 
-      if (!data.candidates || !data.candidates[0]) {
+      if (!data.choices || !data.choices[0]) {
         throw new Error('No response from AI. Check your API key.');
       }
 
-      const rawText = data.candidates[0].content.parts[0].text;
+      const rawText = data.choices[0].message.content;
 
-      // Robust JSON extraction
       let jsonStr = rawText;
       const jsonMatch = rawText.match(/\[[\s\S]*\]/);
       if (jsonMatch) jsonStr = jsonMatch[0];
-
-      // Remove markdown code blocks if present
       jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
       const parsed = JSON.parse(jsonStr);
@@ -167,7 +197,7 @@ Rules:
         throw new Error('No questions found in PDF. Make sure it contains MCQ questions.');
       }
 
-      setLoadingProgress(90);
+      setLoadingProgress(95);
       setLoadingText(`Found ${parsed.length} questions!`);
 
       const formattedQuestions: Question[] = parsed.map((q: any, i: number) => ({
@@ -177,6 +207,7 @@ Rules:
         correctAnswer: q.correctAnswer || q.correct_answer || q.answer || '',
         topic: q.topic || 'General',
         marks: config.marksPerQuestion,
+        explanation: q.explanation || '',
       }));
 
       setLoadingProgress(100);
@@ -217,7 +248,6 @@ Rules:
           width: '100%',
           maxWidth: '480px'
         }}>
-          {/* Header */}
           <div style={{ textAlign: 'center', marginBottom: '30px' }}>
             <div style={{
               width: '60px', height: '60px',
@@ -235,19 +265,20 @@ Rules:
             </p>
           </div>
 
-          {/* API Key */}
           <div style={{ marginBottom: '20px' }}>
-            <label style={labelStyle}>🔑 Google Gemini API Key</label>
+            <label style={labelStyle}>🔑 OpenRouter API Key</label>
             <input
               type="password"
-              placeholder="AIza..."
+              placeholder="sk-or-v1-..."
               value={config.apiKey}
               onChange={e => setConfig(c => ({ ...c, apiKey: e.target.value }))}
               style={inputStyle}
             />
+            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+              Get free key at <a href="https://openrouter.ai/keys" target="_blank" style={{ color: '#667eea' }}>openrouter.ai/keys</a>
+            </div>
           </div>
 
-          {/* PDF Upload */}
           <div style={{ marginBottom: '20px' }}>
             <label style={labelStyle}>📄 Upload Question Paper (PDF)</label>
             <label style={{
@@ -261,7 +292,6 @@ Rules:
               cursor: 'pointer',
               background: file ? '#f0fdf4' : '#f8fafc',
               borderColor: file ? '#22c55e' : '#cbd5e1',
-              transition: 'all 0.2s',
               gap: '8px'
             }}>
               <span style={{ fontSize: '32px' }}>{file ? '✅' : '📂'}</span>
@@ -284,7 +314,6 @@ Rules:
             </label>
           </div>
 
-          {/* Timer + Marks Row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
             <div>
               <label style={labelStyle}>⏱ Duration (Minutes)</label>
@@ -310,7 +339,6 @@ Rules:
             </div>
           </div>
 
-          {/* Negative Marking */}
           <div style={{
             background: '#fef9f0',
             border: '1px solid #fde68a',
@@ -365,7 +393,6 @@ Rules:
             )}
           </div>
 
-          {/* Start Button */}
           <button
             onClick={processPDF}
             style={{
@@ -380,10 +407,7 @@ Rules:
               cursor: 'pointer',
               letterSpacing: '0.5px',
               boxShadow: '0 8px 20px rgba(102,126,234,0.4)',
-              transition: 'transform 0.2s',
             }}
-            onMouseOver={e => (e.currentTarget.style.transform = 'translateY(-2px)')}
-            onMouseOut={e => (e.currentTarget.style.transform = 'translateY(0)')}
           >
             🚀 Start Exam
           </button>
@@ -412,7 +436,7 @@ Rules:
           width: '90%',
           boxShadow: '0 25px 60px rgba(0,0,0,0.3)'
         }}>
-          <div style={{ fontSize: '60px', marginBottom: '20px', animation: 'spin 2s linear infinite' }}>⚙️</div>
+          <div style={{ fontSize: '60px', marginBottom: '20px' }}>⚙️</div>
           <h2 style={{ margin: '0 0 8px', color: '#1e293b', fontSize: '22px' }}>Analyzing PDF</h2>
           <p style={{ color: '#64748b', marginBottom: '25px', fontSize: '14px' }}>{loadingText}</p>
           <div style={{ background: '#f1f5f9', borderRadius: '10px', height: '10px', overflow: 'hidden' }}>
@@ -435,10 +459,8 @@ Rules:
     const totalQuestions = questions.length;
     const attempted = Object.keys(answers).length;
     const unattempted = totalQuestions - attempted;
-
     const correct = questions.filter(q => answers[q.id] === q.correctAnswer).length;
     const wrong = attempted - correct;
-
     const rawMarks = correct * config.marksPerQuestion;
     const deduction = config.negativeMarking ? wrong * config.negativeMarksValue : 0;
     const finalScore = Math.max(0, rawMarks - deduction);
@@ -455,7 +477,6 @@ Rules:
 
     const { grade, color, label } = getGrade();
 
-    // Topic breakdown
     const topicMap: Record<string, { correct: number; total: number }> = {};
     questions.forEach(q => {
       if (!topicMap[q.topic]) topicMap[q.topic] = { correct: 0, total: 0 };
@@ -471,8 +492,6 @@ Rules:
         padding: '30px 20px'
       }}>
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-
-          {/* Header Card */}
           <div style={{
             background: `linear-gradient(135deg, ${color}22, ${color}11)`,
             border: `2px solid ${color}44`,
@@ -499,7 +518,6 @@ Rules:
             }}>{percentage}%</div>
           </div>
 
-          {/* Stats Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '15px', marginBottom: '25px' }}>
             {[
               { label: 'Total Questions', value: totalQuestions, color: '#667eea', icon: '📋' },
@@ -524,7 +542,6 @@ Rules:
             ))}
           </div>
 
-          {/* Topic Breakdown */}
           {Object.keys(topicMap).length > 1 && (
             <div style={{ background: 'white', borderRadius: '15px', padding: '25px', marginBottom: '25px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)' }}>
               <h3 style={{ margin: '0 0 20px', color: '#1e293b', fontSize: '18px' }}>📊 Topic-wise Performance</h3>
@@ -542,7 +559,6 @@ Rules:
                         width: `${pct}%`,
                         background: pct >= 70 ? '#16a34a' : pct >= 40 ? '#f59e0b' : '#dc2626',
                         borderRadius: '8px',
-                        transition: 'width 1s ease'
                       }} />
                     </div>
                   </div>
@@ -551,9 +567,8 @@ Rules:
             </div>
           )}
 
-          {/* Question Review */}
           <div style={{ background: 'white', borderRadius: '15px', padding: '25px', marginBottom: '25px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)' }}>
-            <h3 style={{ margin: '0 0 20px', color: '#1e293b', fontSize: '18px' }}>🔍 Question Review</h3>
+            <h3 style={{ margin: '0 0 20px', color: '#1e293b', fontSize: '18px' }}>🔍 Question Review & Explanations</h3>
             {questions.map((q, i) => {
               const userAnswer = answers[q.id];
               const isCorrect = userAnswer === q.correctAnswer;
@@ -576,7 +591,7 @@ Rules:
                       <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '10px', fontSize: '14px' }}>
                         Q{i + 1}. {q.text}
                       </div>
-                      <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', fontSize: '13px' }}>
+                      <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', fontSize: '13px', marginBottom: q.explanation ? '10px' : 0 }}>
                         {!isUnattempted && (
                           <span style={{ color: isCorrect ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
                             Your answer: {userAnswer}
@@ -591,6 +606,20 @@ Rules:
                           <span style={{ color: '#d97706', fontWeight: 600 }}>Not attempted</span>
                         )}
                       </div>
+                      {q.explanation && (
+                        <div style={{
+                          background: 'rgba(255,255,255,0.7)',
+                          borderLeft: '3px solid #667eea',
+                          padding: '10px 12px',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          color: '#475569',
+                          marginTop: '8px'
+                        }}>
+                          <strong style={{ color: '#667eea' }}>💡 Explanation: </strong>
+                          {q.explanation}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -598,7 +627,6 @@ Rules:
             })}
           </div>
 
-          {/* Action Buttons */}
           <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button
               onClick={() => {
@@ -616,7 +644,6 @@ Rules:
                 fontSize: '15px',
                 fontWeight: 700,
                 cursor: 'pointer',
-                boxShadow: '0 8px 20px rgba(102,126,234,0.4)'
               }}
             >
               🔄 Retake Exam
@@ -654,8 +681,8 @@ Rules:
   const answeredCount = Object.keys(answers).length;
   const isLastQuestion = currentIdx === totalQ - 1;
   const timerPercent = (timeLeft / (config.timerMinutes * 60)) * 100;
-  const isTimerWarning = timeLeft <= 300; // 5 minutes warning
-  const isTimerCritical = timeLeft <= 60; // 1 minute critical
+  const isTimerWarning = timeLeft <= 300;
+  const isTimerCritical = timeLeft <= 60;
 
   return (
     <div style={{
@@ -665,7 +692,6 @@ Rules:
       fontFamily: "'Segoe UI', sans-serif",
       flexDirection: 'column'
     }}>
-      {/* Top Bar */}
       <div style={{
         background: 'white',
         padding: '12px 25px',
@@ -679,7 +705,6 @@ Rules:
       }}>
         <div style={{ fontWeight: 700, fontSize: '18px', color: '#1e293b' }}>📝 PYQ Exam Portal</div>
 
-        {/* Timer */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -711,7 +736,6 @@ Rules:
           </div>
         </div>
 
-        {/* Progress + Submit */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <div style={{ fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
             <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '15px' }}>{answeredCount}/{totalQ} answered</div>
@@ -728,7 +752,6 @@ Rules:
               fontWeight: 700,
               cursor: 'pointer',
               fontSize: '14px',
-              boxShadow: '0 4px 12px rgba(220,38,38,0.3)'
             }}
           >
             Submit Exam
@@ -736,13 +759,8 @@ Rules:
         </div>
       </div>
 
-      {/* Main Content */}
       <div style={{ display: 'flex', flex: 1, padding: '20px', gap: '20px', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
-
-        {/* Question Panel */}
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-
-          {/* Question Card */}
           <div style={{
             background: 'white',
             borderRadius: '16px',
@@ -750,7 +768,6 @@ Rules:
             boxShadow: '0 4px 15px rgba(0,0,0,0.06)',
             flex: 1
           }}>
-            {/* Question Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{
@@ -780,7 +797,6 @@ Rules:
               </div>
             </div>
 
-            {/* Question Text */}
             <p style={{
               fontSize: '17px',
               color: '#1e293b',
@@ -795,7 +811,6 @@ Rules:
               {currentQuestion?.text}
             </p>
 
-            {/* Options */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {currentQuestion?.options.map((opt: string, i: number) => {
                 const isSelected = answers[currentQuestion.id] === opt;
@@ -814,18 +829,10 @@ Rules:
                       display: 'flex',
                       alignItems: 'center',
                       gap: '15px',
-                      transition: 'all 0.2s',
                       fontFamily: "'Segoe UI', sans-serif",
                       fontSize: '15px',
                       color: '#1e293b',
                       fontWeight: isSelected ? 600 : 400,
-                      boxShadow: isSelected ? '0 4px 12px rgba(102,126,234,0.2)' : 'none'
-                    }}
-                    onMouseOver={e => {
-                      if (!isSelected) e.currentTarget.style.borderColor = '#a5b4fc';
-                    }}
-                    onMouseOut={e => {
-                      if (!isSelected) e.currentTarget.style.borderColor = '#e2e8f0';
                     }}
                   >
                     <span style={{
@@ -845,7 +852,6 @@ Rules:
               })}
             </div>
 
-            {/* Clear Selection */}
             {answers[currentQuestion?.id] && (
               <button
                 onClick={() => setAnswers(prev => {
@@ -870,7 +876,6 @@ Rules:
             )}
           </div>
 
-          {/* Navigation */}
           <div style={{
             background: 'white',
             borderRadius: '16px',
@@ -898,13 +903,9 @@ Rules:
 
             <div style={{ display: 'flex', gap: '8px' }}>
               {answers[currentQuestion?.id] ? (
-                <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  ✅ Answered
-                </span>
+                <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '14px' }}>✅ Answered</span>
               ) : (
-                <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  ⭕ Not answered
-                </span>
+                <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: '14px' }}>⭕ Not answered</span>
               )}
             </div>
 
@@ -920,7 +921,6 @@ Rules:
                   cursor: 'pointer',
                   fontWeight: 700,
                   fontSize: '14px',
-                  boxShadow: '0 4px 12px rgba(22,163,74,0.3)'
                 }}
               >
                 Submit Exam ✓
@@ -937,7 +937,6 @@ Rules:
                   cursor: 'pointer',
                   fontWeight: 600,
                   fontSize: '14px',
-                  boxShadow: '0 4px 12px rgba(102,126,234,0.3)'
                 }}
               >
                 Next →
@@ -946,7 +945,6 @@ Rules:
           </div>
         </main>
 
-        {/* Sidebar - Question Palette */}
         <aside style={{
           width: '260px',
           display: 'flex',
@@ -954,7 +952,6 @@ Rules:
           gap: '15px',
           flexShrink: 0
         }}>
-          {/* Legend */}
           <div style={{ background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)' }}>
             <h3 style={{ margin: '0 0 15px', fontSize: '15px', color: '#1e293b' }}>Question Palette</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px' }}>
@@ -977,7 +974,6 @@ Rules:
               ))}
             </div>
 
-            {/* Question Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
               {questions.map((q, i) => {
                 const isAnswered = !!answers[q.id];
@@ -995,7 +991,6 @@ Rules:
                       fontSize: '12px',
                       fontWeight: 700,
                       color: isCurrent ? 'white' : isAnswered ? 'white' : '#dc2626',
-                      transition: 'all 0.15s'
                     }}
                   >
                     {i + 1}
@@ -1005,7 +1000,6 @@ Rules:
             </div>
           </div>
 
-          {/* Exam Info */}
           <div style={{ background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)' }}>
             <h3 style={{ margin: '0 0 15px', fontSize: '15px', color: '#1e293b' }}>📋 Exam Info</h3>
             {[
@@ -1031,7 +1025,6 @@ Rules:
   );
 }
 
-// Shared styles
 const labelStyle: React.CSSProperties = {
   display: 'block',
   marginBottom: '6px',
@@ -1049,6 +1042,5 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
   boxSizing: 'border-box',
   fontFamily: "'Segoe UI', sans-serif",
-  transition: 'border-color 0.2s',
   color: '#1e293b'
 };
